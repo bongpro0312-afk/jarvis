@@ -72,6 +72,12 @@ header h1{font-size:15px;letter-spacing:6px;margin:0;color:var(--cyan);font-weig
 #sheet .actions button{flex:1;min-width:120px;padding:12px;border-radius:12px;font-size:15px;cursor:pointer}
 .ghost{background:none;border:1px solid var(--line);color:var(--text)}
 a{color:var(--cyan)}
+#voiceList{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.vrow{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
+.vrow.sel{border-color:var(--cyan)}
+.vrow .vn{flex:1;font-size:14px}
+.vrow button{background:none;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer}
+.vrow.sel .pick{background:var(--cyan);color:#022;border-color:var(--cyan)}
 </style>
 </head>
 <body>
@@ -119,6 +125,7 @@ a{color:var(--cyan)}
 
     <label for="voice">목소리</label>
     <select id="voice"></select>
+    <div id="voiceList"></div>
     <div class="hint">맥·아이폰 설정 &gt; 손쉬운 사용 &gt; 읽기 및 말하기 &gt; 음성에서 한국어 고품질 음성(예: Yuna 향상됨)을 내려받으면 더 자연스러워져요.</div>
 
     <label for="rate">말 빠르기</label>
@@ -206,6 +213,27 @@ function loadVoices() {
     if (best) settings.voice = best.name;
   }
   sel.value = settings.voice;
+  renderVoiceList(list);
+}
+function renderVoiceList(list) {
+  const box = $("voiceList"); if (!box) return;
+  box.innerHTML = "";
+  for (const v of list) {
+    const row = document.createElement("div");
+    row.className = "vrow" + ($("voice").value === v.name ? " sel" : "");
+    const n = document.createElement("span"); n.className = "vn"; n.textContent = v.name.replace(/\s*\(.*\)$/, "");
+    const play = document.createElement("button"); play.type = "button"; play.textContent = "▶ 듣기";
+    play.onclick = () => {
+      unlockAudio(); stopSpeaking();
+      const u = new SpeechSynthesisUtterance(`안녕하세요, ${$("userName").value || "제이슨님"}. 자비스입니다. 모든 시스템이 정상 작동 중입니다.`);
+      u.lang = "ko-KR"; u.voice = v; u.rate = Number($("rate").value) || 1; u.pitch = Number($("pitch").value) || 1;
+      synth.speak(u);
+    };
+    const pick = document.createElement("button"); pick.type = "button"; pick.className = "pick";
+    pick.textContent = $("voice").value === v.name ? "선택됨" : "선택";
+    pick.onclick = () => { $("voice").value = v.name; renderVoiceList(list); };
+    row.append(n, play, pick); box.appendChild(row);
+  }
 }
 if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
 
@@ -484,6 +512,7 @@ function readForm() {
   settings.briefing = $("briefing").value; settings.memories = $("memories").value;
 }
 $("setBtn").addEventListener("click", openSettings);
+$("voice").addEventListener("change", () => renderVoiceList(synth ? synth.getVoices().filter(v => /^ko/i.test(v.lang)) : []));
 $("previewBtn").addEventListener("click", () => {
   readForm(); unlockAudio(); stopSpeaking();
   speak(`안녕하세요, ${settings.userName}. 자비스입니다. 모든 시스템이 정상 작동 중입니다.`);
@@ -492,6 +521,7 @@ $("jarvisPreset").addEventListener("click", () => {
   const ko = synth ? synth.getVoices().filter(v => /^ko/i.test(v.lang)) : [];
   const v = ko.find(v => /^reed/i.test(v.name)) || ko.find(v => /^(eddy|rocko)/i.test(v.name));
   if (v) $("voice").value = v.name;
+  renderVoiceList(ko);
   $("pitch").value = 0.8; $("rate").value = 0.95;
   $("previewBtn").click();
 });
