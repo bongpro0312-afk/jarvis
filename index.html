@@ -224,10 +224,10 @@ function renderVoiceList(list) {
     const n = document.createElement("span"); n.className = "vn"; n.textContent = v.name.replace(/\s*\(.*\)$/, "");
     const play = document.createElement("button"); play.type = "button"; play.textContent = "▶ 듣기";
     play.onclick = () => {
-      unlockAudio(); stopSpeaking();
+      stopSpeaking();
       const u = new SpeechSynthesisUtterance(`안녕하세요, ${$("userName").value || "제이슨님"}. 자비스입니다. 모든 시스템이 정상 작동 중입니다.`);
       u.lang = "ko-KR"; u.voice = v; u.rate = Number($("rate").value) || 1; u.pitch = Number($("pitch").value) || 1;
-      synth.speak(u);
+      safeSpeak(u);
     };
     const pick = document.createElement("button"); pick.type = "button"; pick.className = "pick";
     pick.textContent = $("voice").value === v.name ? "선택됨" : "선택";
@@ -260,16 +260,45 @@ function speak(text) {
     speakQueue = Math.max(0, speakQueue - 1);
     if (!speakQueue && speakDone) { const f = speakDone; speakDone = null; f(); }
   };
-  synth.speak(u);
+  safeSpeak(u);
 }
-function stopSpeaking() { if (synth) synth.cancel(); speakQueue = 0; speakDone = null; }
+// Chrome on macOS can drop or jam an utterance queued right after cancel(), and
+// garbage-collects utterances it still needs. Keep references, give the engine a
+// moment after a cancel, and restart once if speech never starts.
+const live = new Set();
+window.__tts = [];
+let lastCancel = 0;
+function safeSpeak(u, retried) {
+  live.add(u);
+  let started = false;
+  const prevStart = u.onstart, prevEnd = u.onend, prevErr = u.onerror;
+  u.onstart = (e) => { started = true; window.__tts.push("start"); prevStart && prevStart(e); };
+  u.onend = (e) => { live.delete(u); window.__tts.push("end"); prevEnd && prevEnd(e); };
+  u.onerror = (e) => { live.delete(u); window.__tts.push("error:" + e.error); prevErr && prevErr(e); };
+  const go = () => {
+    synth.resume();
+    synth.speak(u);
+    if (!retried) setTimeout(() => {
+      if (!started && live.has(u) && !synth.pending) {
+        window.__tts.push("retry");
+        u.onstart = prevStart; u.onend = prevEnd; u.onerror = prevErr;
+        live.delete(u); synth.cancel(); lastCancel = Date.now();
+        setTimeout(() => safeSpeak(u, true), 150);
+      }
+    }, 1500);
+  };
+  const wait = 150 - (Date.now() - lastCancel);
+  if (wait > 0) setTimeout(go, wait); else go();
+}
+function stopSpeaking() { if (synth) { synth.cancel(); lastCancel = Date.now(); } speakQueue = 0; speakDone = null; }
 function whenSpeechDone(fn) { if (!speakQueue) fn(); else speakDone = fn; }
 // iOS needs speech unlocked inside a tap
 let unlocked = false;
 function unlockAudio() {
   if (unlocked || !synth) return;
   unlocked = true;
-  const u = new SpeechSynthesisUtterance(" "); u.volume = 0; synth.speak(u);
+  if (!/iPhone|iPad|iPod/.test(navigator.userAgent)) return;   // only iOS needs this
+  const u = new SpeechSynthesisUtterance("."); u.volume = 0; u.lang = "ko-KR"; synth.speak(u);
 }
 
 // ---------- Speech input ----------
@@ -514,7 +543,7 @@ function readForm() {
 $("setBtn").addEventListener("click", openSettings);
 $("voice").addEventListener("change", () => renderVoiceList(synth ? synth.getVoices().filter(v => /^ko/i.test(v.lang)) : []));
 $("previewBtn").addEventListener("click", () => {
-  readForm(); unlockAudio(); stopSpeaking();
+  readForm(); stopSpeaking();
   speak(`안녕하세요, ${settings.userName}. 자비스입니다. 모든 시스템이 정상 작동 중입니다.`);
 });
 $("jarvisPreset").addEventListener("click", () => {
