@@ -122,7 +122,14 @@ a{color:var(--cyan)}
     <div class="hint">맥·아이폰 설정 &gt; 손쉬운 사용 &gt; 읽기 및 말하기 &gt; 음성에서 한국어 고품질 음성(예: Yuna 향상됨)을 내려받으면 더 자연스러워져요.</div>
 
     <label for="rate">말 빠르기</label>
-    <input id="rate" type="range" min="0.7" max="1.4" step="0.05" value="1.05">
+    <input id="rate" type="range" min="0.7" max="1.4" step="0.05" value="0.95">
+
+    <label for="pitch">목소리 높낮이 (왼쪽일수록 낮고 묵직함)</label>
+    <input id="pitch" type="range" min="0.5" max="1.5" step="0.05" value="0.8">
+    <div class="actions">
+      <button class="ghost" id="previewBtn" type="button">미리 듣기</button>
+      <button class="ghost" id="jarvisPreset" type="button">자비스 스타일로</button>
+    </div>
 
     <label for="briefing">프로젝트 브리핑 (자비스가 항상 알고 있을 내용)</label>
     <textarea id="briefing" placeholder="예) 허니봉: 캠핑 인스타 계정, 이번 주 릴스 2개 업로드 예정&#10;THE RAM: PPF 사업, theramdio.kr 자동견적 시스템 운영 중"></textarea>
@@ -154,7 +161,7 @@ const LS = {
 };
 
 let settings = Object.assign({
-  apiKey: "", userName: "제이슨님", model: "claude-opus-5-5", voice: "", rate: 1.05,
+  apiKey: "", userName: "제이슨님", model: "claude-opus-5-5", voice: "", rate: 0.95, pitch: 0.8,
   briefing: "", memories: "", handsfree: false, voiceOut: true,
 }, LS.get("settings", {}));
 let history = LS.get("history", []);   // [{role, content:string}]
@@ -195,7 +202,7 @@ function loadVoices() {
   }
   if (!list.length) { const o = document.createElement("option"); o.textContent = "기본 목소리"; o.value = ""; sel.appendChild(o); }
   if (!settings.voice) {
-    const best = koVoices.find(v => /premium|enhanced|향상|yuna/i.test(v.name)) || koVoices[0];
+    const best = koVoices.find(v => /^reed/i.test(v.name)) || koVoices.find(v => /^(eddy|rocko)/i.test(v.name)) || koVoices[0];
     if (best) settings.voice = best.name;
   }
   sel.value = settings.voice;
@@ -216,6 +223,7 @@ function speak(text) {
   const u = new SpeechSynthesisUtterance(t);
   u.lang = "ko-KR";
   u.rate = Number(settings.rate) || 1;
+  u.pitch = Number(settings.pitch) || 1;
   const v = synth.getVoices().find(v => v.name === settings.voice);
   if (v) u.voice = v;
   speakQueue++;
@@ -463,7 +471,7 @@ $("voiceOut").addEventListener("click", () => { settings.voiceOut = !settings.vo
 
 function openSettings() {
   $("apiKey").value = settings.apiKey; $("userName").value = settings.userName;
-  $("model").value = settings.model; $("rate").value = settings.rate;
+  $("model").value = settings.model; $("rate").value = settings.rate; $("pitch").value = settings.pitch ?? 0.8;
   $("briefing").value = settings.briefing; $("memories").value = settings.memories;
   loadVoices();
   $("sheet").classList.add("open");
@@ -472,10 +480,21 @@ function readForm() {
   settings.apiKey = $("apiKey").value.trim();
   settings.userName = $("userName").value.trim() || "제이슨님";
   settings.model = $("model").value; settings.voice = $("voice").value;
-  settings.rate = Number($("rate").value);
+  settings.rate = Number($("rate").value); settings.pitch = Number($("pitch").value);
   settings.briefing = $("briefing").value; settings.memories = $("memories").value;
 }
 $("setBtn").addEventListener("click", openSettings);
+$("previewBtn").addEventListener("click", () => {
+  readForm(); unlockAudio(); stopSpeaking();
+  speak(`안녕하세요, ${settings.userName}. 자비스입니다. 모든 시스템이 정상 작동 중입니다.`);
+});
+$("jarvisPreset").addEventListener("click", () => {
+  const ko = synth ? synth.getVoices().filter(v => /^ko/i.test(v.lang)) : [];
+  const v = ko.find(v => /^reed/i.test(v.name)) || ko.find(v => /^(eddy|rocko)/i.test(v.name));
+  if (v) $("voice").value = v.name;
+  $("pitch").value = 0.8; $("rate").value = 0.95;
+  $("previewBtn").click();
+});
 $("closeBtn").addEventListener("click", () => $("sheet").classList.remove("open"));
 $("saveBtn").addEventListener("click", () => {
   readForm(); LS.set("settings", settings); $("sheet").classList.remove("open");
