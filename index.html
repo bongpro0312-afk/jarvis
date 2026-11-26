@@ -916,6 +916,11 @@ setUI("idle");
 if (!settings.apiKey) addMsg("sys", "처음이시죠? 오른쪽 위 '설정'에서 Claude API 키를 넣어주세요.");
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 window.__jarvis = { Core, setUI };
+if (location.hash === "#voice") {
+  openSettings(); draftTts = "eleven"; syncSeg();
+  const k = $("elevenKey"); k.scrollIntoView({ block: "center" }); k.focus();
+  if (settings.elevenKey && !elevenVoices.length) fetchElevenVoices();
+}
 })();
 </script>
 </body>
