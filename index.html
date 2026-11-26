@@ -156,6 +156,7 @@ a{color:var(--cyan)}
       <div class="actions">
         <button class="ghost" id="loadVoices" type="button">목소리 목록 불러오기</button>
       </div>
+      <div class="hint" id="elevenStatus" style="color:var(--amber)"></div>
       <div class="hint">"▶ 샘플"은 무료 영어 샘플이고, "▶ 한국어"는 실제 자비스 말투로 들려줘요(크레딧 조금 사용).</div>
       <div class="vlist" id="elevenList"></div>
 
@@ -526,6 +527,7 @@ async function elevenTTS(text, voiceId, model, signal) {
   return URL.createObjectURL(await r.blob());
 }
 function reportEleven(e) {
+  const st = $("elevenStatus"); if (st && $("sheet").classList.contains("open")) st.textContent = "한국어 듣기 실패: " + e.message;
   let m = "ElevenLabs 목소리를 못 불러왔어요: " + e.message;
   if (e.status === 401) m = "ElevenLabs 키가 맞지 않아요. 설정에서 확인해 주세요.";
   if (/quota|credits|limit/i.test(e.message)) m = "ElevenLabs 이번 달 사용량을 다 썼어요. 그동안 기기 목소리로 말할게요.";
@@ -806,11 +808,17 @@ let selVoiceId = settings.elevenVoiceId;
 const previewAudio = new Audio();
 async function fetchElevenVoices() {
   const key = $("elevenKey").value.trim();
-  if (!key) { note("ElevenLabs API 키를 먼저 넣어주세요."); $("elevenKey").focus(); return; }
+  const st = $("elevenStatus");
+  if (!key) { st.textContent = "먼저 위 칸에 ElevenLabs API 키를 붙여넣어 주세요."; $("elevenKey").focus(); return; }
+  if (!/^sk_/.test(key)) { st.textContent = "붙여넣은 값이 ElevenLabs 키 모양(sk_로 시작)이 아니에요. 키를 다시 복사해 주세요."; return; }
+  st.textContent = "불러오는 중…";
   $("loadVoices").textContent = "불러오는 중…";
   try {
     const r = await fetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": key } });
-    if (!r.ok) throw new Error(r.status === 401 ? "키가 맞지 않아요" : "HTTP " + r.status);
+    if (!r.ok) {
+      let m = ""; try { const j = await r.json(); m = j.detail?.message || j.detail?.status || ""; } catch {}
+      throw new Error(r.status === 401 && /permission|missing/i.test(m) ? "키에 '음성 읽기' 권한이 없어요" : r.status === 401 ? "키가 맞지 않아요 (" + m + ")" : "HTTP " + r.status + " " + m);
+    }
     const j = await r.json();
     elevenVoices = (j.voices || []).map(v => ({
       id: v.voice_id, name: v.name, preview: v.preview_url || "",
@@ -821,7 +829,8 @@ async function fetchElevenVoices() {
     elevenVoices.sort((a, b) => rank(a) - rank(b));
     LS.set("elevenVoices", elevenVoices);
     renderElevenList();
-  } catch (e) { addMsg("sys", "목소리 목록을 못 불러왔어요: " + e.message, "err"); }
+    st.textContent = `목소리 ${elevenVoices.length}개를 불러왔어요. ▶ 샘플을 눌러 들어보세요.`;
+  } catch (e) { st.textContent = "목소리 목록을 못 불러왔어요: " + e.message; }
   $("loadVoices").textContent = "목소리 목록 다시 불러오기";
 }
 const KO = { male: "남성", female: "여성", young: "젊은", "middle aged": "중년", "middle-aged": "중년", old: "노년" };
@@ -835,7 +844,14 @@ function renderElevenList() {
     n.appendChild(d);
     const p1 = document.createElement("button"); p1.type = "button"; p1.textContent = "▶ 샘플";
     p1.disabled = !v.preview;
-    p1.onclick = () => { stopSpeaking(); if (/^https:\/\//.test(v.preview)) { previewAudio.src = v.preview; previewAudio.play().catch(() => {}); } };
+    p1.onclick = () => {
+      stopSpeaking();
+      if (/^https:\/\//.test(v.preview)) {
+        previewAudio.src = v.preview;
+        previewAudio.play().then(() => { $("elevenStatus").textContent = v.name + " 샘플 재생 중"; })
+          .catch((e) => { $("elevenStatus").textContent = "샘플 재생 실패: " + e.message; });
+      }
+    };
     const p2 = document.createElement("button"); p2.type = "button"; p2.textContent = "▶ 한국어";
     p2.onclick = () => {
       unlockAudio(); previewAudio.pause(); stopSpeaking();
