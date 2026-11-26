@@ -80,6 +80,21 @@ a{color:var(--cyan)}
 .vrow button{background:none;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:6px 9px;font-size:12.5px;cursor:pointer}
 .vrow.sel .pick{background:var(--cyan);color:#022;border-color:var(--cyan)}
 .hidden{display:none!important}
+/* status board */
+#boardBtn .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--dim);margin-right:6px;vertical-align:1px}
+#boardBtn.live .dot{background:#4cff9a;box-shadow:0 0 8px #4cff9a}
+#boardBtn.warn .dot{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+#board{position:fixed;top:calc(58px + env(safe-area-inset-top));right:12px;left:12px;max-width:420px;margin-left:auto;max-height:62vh;overflow-y:auto;
+  z-index:5;background:#08111bdd;border:1px solid var(--line);border-radius:14px;padding:12px 14px;backdrop-filter:blur(10px);display:none}
+#board.open{display:block}
+#board .bh{display:flex;justify-content:space-between;align-items:center;font-family:Orbitron,sans-serif;font-size:11px;letter-spacing:3px;color:var(--cyan)}
+#board .bh button{background:none;border:1px solid var(--line);color:var(--dim);border-radius:8px;padding:4px 8px;font-size:12px;cursor:pointer}
+#board .bu{font-size:11.5px;color:var(--dim);margin:4px 0 6px}
+#board .sec{font-size:12.5px;color:var(--cyan2);margin:12px 0 4px;letter-spacing:1px}
+#board .it{font-size:14px;line-height:1.5;padding:6px 0 6px 10px;border-left:2px solid var(--line);margin:4px 0}
+#board .sec.run + .it, #board .it.run{border-left-color:#4cff9a}
+#board .it.wait{border-left-color:var(--amber)}
+#board .empty{font-size:13px;color:var(--dim);line-height:1.6}
 </style>
 </head>
 <body>
@@ -92,10 +107,17 @@ a{color:var(--cyan)}
       <div class="sub" id="sub">SYSTEM ONLINE</div>
     </div>
     <div style="display:flex;gap:8px">
+      <button class="iconbtn" id="boardBtn"><span class="dot"></span>현황</button>
       <button class="iconbtn" id="newBtn">새 대화</button>
       <button class="iconbtn" id="setBtn">설정</button>
     </div>
   </header>
+
+  <div id="board" aria-live="polite">
+    <div class="bh"><span>PROJECT STATUS</span><span><button type="button" id="boardRefresh">새로고침</button> <button type="button" id="boardClose">닫기</button></span></div>
+    <div class="bu" id="boardUpdated"></div>
+    <div id="boardBody"></div>
+  </div>
 
   <div class="spacer" id="tapzone"></div>
 
@@ -185,6 +207,14 @@ a{color:var(--cyan)}
     <label for="memories">자비스가 기억한 것</label>
     <textarea id="memories" placeholder="대화 중 &quot;기억해&quot;라고 말하면 여기에 쌓여요"></textarea>
 
+    <h3>프로젝트 현황판</h3>
+    <label for="statusToken">현황판 읽기 열쇠 (GitHub)</label>
+    <input id="statusToken" type="password" placeholder="github_pat_..." autocomplete="off">
+    <div class="hint">비공개 저장소의 작업 현황을 "읽기만" 하는 열쇠예요. 이 기기 안에만 저장돼요.</div>
+    <label for="statusRepo">현황 저장소</label>
+    <input id="statusRepo" placeholder="bongpro0312-afk/jarvis-status" autocomplete="off">
+    <div class="hint" id="statusHint"></div>
+
     <h3>폰 ↔ 맥 옮기기</h3>
     <div class="hint">한쪽에서 "설정 복사"를 누르고, 다른 기기에서 "설정 붙여넣기"를 누르면 키·목소리·브리핑·기억이 그대로 옮겨져요.</div>
     <div class="actions">
@@ -214,6 +244,7 @@ let settings = Object.assign({
   tts: "browser", elevenKey: "", elevenVoiceId: "", elevenVoiceName: "", elevenModel: "eleven_multilingual_v2",
   voice: "", rate: 1, pitch: 0.8,
   briefing: "", memories: "", handsfree: false, voiceOut: true,
+  statusToken: "", statusRepo: "bongpro0312-afk/jarvis-status",
 }, LS.get("settings", {}));
 let history = LS.get("history", []);
 const MAX_TURNS = 30;
@@ -613,6 +644,7 @@ function systemPrompt() {
 `지금 시각: ${now}`,
 settings.briefing ? `\n<프로젝트_브리핑>\n${settings.briefing}\n</프로젝트_브리핑>` : "",
 settings.memories ? `\n<기억>\n${settings.memories}\n</기억>` : "",
+Board.text ? `\n<프로젝트_작업_현황 불러온시각="${Board.fetchedAt}">\n${Board.text.slice(0, 6000)}\n</프로젝트_작업_현황>\n이 현황은 ${who}의 프로젝트에서 일하는 Claude들이 기록한 것이다. 진행 상황을 물으면 이걸 바탕으로 말하고, 여기에 없는 일은 모른다고 솔직히 말한다. 작업 지시는 Claude 프로젝트 채팅에서 해야 한다고 안내한다.` : "",
   ].join("\n");
 }
 
@@ -873,6 +905,8 @@ function openSettings() {
   selVoiceId = settings.elevenVoiceId;
   $("rate").value = settings.rate; $("pitch").value = settings.pitch ?? .8;
   $("briefing").value = settings.briefing; $("memories").value = settings.memories;
+  $("statusToken").value = settings.statusToken || ""; $("statusRepo").value = settings.statusRepo || "";
+  $("statusHint").textContent = Board.hint();
   draftTts = settings.tts; syncSeg();
   loadDeviceVoices(); renderElevenList();
   $("sheet").classList.add("open");
@@ -890,6 +924,8 @@ function readForm() {
   settings.voice = $("voice").value || settings.voice;
   settings.rate = Number($("rate").value); settings.pitch = Number($("pitch").value);
   settings.briefing = $("briefing").value; settings.memories = $("memories").value;
+  settings.statusToken = $("statusToken").value.trim();
+  settings.statusRepo = $("statusRepo").value.trim().replace(/^https?:\/\/github\.com\//, "").replace(/\/+$/, "") || "bongpro0312-afk/jarvis-status";
   elevenFailed = false;
 }
 $("setBtn").addEventListener("click", openSettings);
@@ -905,6 +941,7 @@ $("saveBtn").addEventListener("click", () => {
   $("sheet").classList.remove("open");
   if (settings.tts === "eleven" && (!settings.elevenKey || !settings.elevenVoiceId)) addMsg("sys", "ElevenLabs 키와 목소리를 다 고르기 전까지는 기기 목소리로 말할게요.");
   speak("설정 저장했어요. 언제든 불러주세요.", { force: true });
+  Board.refresh();
 });
 $("exportBtn").addEventListener("click", async () => {
   readForm();
@@ -926,12 +963,82 @@ $("importBtn").addEventListener("click", async () => {
 function alertLike(t) { note(t); addMsg("sys", t); }
 
 // =====================================================================
+// =====================================================================
+//  Project status board (private GitHub repo, read-only token)
+// =====================================================================
+var Board = (() => {
+  const B = { text: "", fetchedAt: "", error: "", timer: null };
+  const esc = (t) => t.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  B.hint = () => !settings.statusToken ? "열쇠를 넣으면 몇 분마다 작업 현황을 불러와요."
+    : B.error ? "문제: " + B.error : B.fetchedAt ? `마지막으로 불러온 시각: ${B.fetchedAt}` : "아직 불러오지 않았어요.";
+  function render() {
+    const btn = $("boardBtn"), body = $("boardBody");
+    btn.classList.toggle("live", !!B.text && !B.error);
+    btn.classList.toggle("warn", !!B.error);
+    if (!settings.statusToken) {
+      body.innerHTML = `<div class="empty">아직 현황판이 연결되지 않았어요. 설정의 "현황판 읽기 열쇠"에 열쇠를 넣으면 여기에 프로젝트 작업 현황이 떠요.</div>`;
+      $("boardUpdated").textContent = ""; return;
+    }
+    if (B.error && !B.text) { body.innerHTML = `<div class="empty">${esc(B.error)}</div>`; $("boardUpdated").textContent = ""; return; }
+    let html = "", mode = "";
+    for (const raw of B.text.split("\n")) {
+      const line = raw.trim();
+      if (!line || line.startsWith("<!--")) continue;
+      if (line.startsWith("# ")) continue;
+      if (line.startsWith("## ")) {
+        const t = line.slice(3);
+        mode = /진행/.test(t) ? "run" : /대기|확인|필요/.test(t) ? "wait" : "";
+        html += `<div class="sec">${esc(t)}</div>`; continue;
+      }
+      if (/^[-*] /.test(line)) { html += `<div class="it ${mode}">${esc(line.slice(2))}</div>`; continue; }
+      if (/^업데이트:/.test(line)) continue;
+      html += `<div class="empty">${esc(line)}</div>`;
+    }
+    body.innerHTML = html || `<div class="empty">기록된 작업이 아직 없어요.</div>`;
+    const up = (B.text.match(/^업데이트:\s*(.+)$/m) || [])[1];
+    $("boardUpdated").textContent = (up ? `기록 ${up} · ` : "") + `불러옴 ${B.fetchedAt}` + (B.error ? ` · ${B.error}` : "");
+  }
+  B.refresh = async () => {
+    if (!settings.statusToken) { render(); return; }
+    const repo = settings.statusRepo || "bongpro0312-afk/jarvis-status";
+    try {
+      const r = await fetch(`https://api.github.com/repos/${repo}/contents/status.md?t=${Date.now()}`, {
+        headers: { Authorization: "Bearer " + settings.statusToken, Accept: "application/vnd.github.raw+json", "X-GitHub-Api-Version": "2022-11-28" },
+        cache: "no-store",
+      });
+      if (r.status === 401) throw new Error("열쇠가 맞지 않거나 만료됐어요. 새 열쇠를 넣어주세요.");
+      if (r.status === 403) throw new Error("열쇠에 이 저장소를 읽을 권한이 없어요.");
+      if (r.status === 404) throw new Error("저장소나 status.md 파일을 찾지 못했어요. 열쇠가 그 저장소에 연결됐는지 확인해 주세요.");
+      if (!r.ok) throw new Error("현황을 불러오지 못했어요 (" + r.status + ").");
+      B.text = await r.text(); B.error = "";
+      B.fetchedAt = new Date().toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    } catch (e) {
+      B.error = e && e.message && !/fetch/i.test(e.message) ? e.message : "인터넷 연결을 확인해 주세요.";
+    }
+    render();
+    if ($("statusHint")) $("statusHint").textContent = B.hint();
+  };
+  B.start = () => {
+    render(); B.refresh();
+    clearInterval(B.timer); B.timer = setInterval(B.refresh, 3 * 60 * 1000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) B.refresh(); });
+  };
+  $("boardBtn").addEventListener("click", () => { const o = $("board").classList.toggle("open"); if (o) B.refresh(); });
+  $("boardClose").addEventListener("click", () => $("board").classList.remove("open"));
+  $("boardRefresh").addEventListener("click", B.refresh);
+  return B;
+})();
+
 syncChips();
 renderHistory();
+Board.start();
 setUI("idle");
 if (!settings.apiKey) addMsg("sys", "처음이시죠? 오른쪽 위 '설정'에서 Claude API 키를 넣어주세요.");
 if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
-window.__jarvis = { Core, setUI };
+window.__jarvis = { Core, setUI, Board };
+if (location.hash === "#status") {
+  openSettings(); const k = $("statusToken"); k.scrollIntoView({ block: "center" }); k.focus();
+}
 if (location.hash === "#voice") {
   openSettings(); draftTts = "eleven"; syncSeg();
   const k = $("elevenKey"); k.scrollIntoView({ block: "center" }); k.focus();
